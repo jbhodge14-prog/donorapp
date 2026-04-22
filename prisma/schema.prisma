@@ -1,0 +1,206 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+}
+
+enum DonationFrequency {
+  ONE_TIME
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum DonationSource {
+  EMBED
+  PORTAL
+  ADMIN
+  IMPORT
+}
+
+enum DonationChannel {
+  CARD
+  ACH
+  CHECK
+  CASH
+  EXTERNAL
+}
+
+enum DonationStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum RecurringStatus {
+  ACTIVE
+  PAUSED
+  CANCELED
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum IntegrationProvider {
+  STRIPE
+  QUICKBOOKS
+  MAILCHIMP
+}
+
+enum IntegrationEventStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+model Donor {
+  id                   String              @id @default(cuid())
+  email                String              @unique
+  firstName            String
+  lastName             String
+  phone                String?
+  addressLine1         String?
+  addressLine2         String?
+  city                 String?
+  state                String?
+  postalCode           String?
+  country              String?
+  lifetimeGivingCents  Int                 @default(0)
+  marketingOptIn       Boolean             @default(false)
+  stripeCustomerId     String?             @unique
+  quickbooksCustomerId String?             @unique
+  mailchimpMemberId    String?             @unique
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  donations            Donation[]
+  recurringDonations   RecurringDonation[]
+  receipts             Receipt[]
+  statements           YearEndStatement[]
+}
+
+model Campaign {
+  id                 String         @id @default(cuid())
+  name               String
+  slug               String         @unique
+  description        String
+  goalAmountCents    Int
+  raisedAmountCents  Int            @default(0)
+  status             CampaignStatus @default(DRAFT)
+  featured           Boolean        @default(false)
+  startsAt           DateTime?
+  endsAt             DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  donations          Donation[]
+  recurringDonations RecurringDonation[]
+}
+
+model Donation {
+  id                    String             @id @default(cuid())
+  donorId               String
+  campaignId            String?
+  recurringDonationId   String?
+  amountCents           Int
+  netAmountCents        Int?
+  feeAmountCents        Int?
+  source                DonationSource
+  channel               DonationChannel
+  frequency             DonationFrequency
+  status                DonationStatus     @default(PENDING)
+  isGeneralFund         Boolean            @default(false)
+  designationLabel      String
+  stripePaymentIntentId String?            @unique
+  stripeInvoiceId       String?            @unique
+  externalReference     String?
+  donatedAt             DateTime
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  donor                 Donor              @relation(fields: [donorId], references: [id])
+  campaign              Campaign?          @relation(fields: [campaignId], references: [id])
+  recurringDonation     RecurringDonation? @relation(fields: [recurringDonationId], references: [id])
+  receipt               Receipt?
+
+  @@index([donorId, donatedAt])
+  @@index([campaignId, donatedAt])
+}
+
+model RecurringDonation {
+  id                   String            @id @default(cuid())
+  donorId              String
+  campaignId           String?
+  amountCents          Int
+  frequency            DonationFrequency
+  status               RecurringStatus   @default(ACTIVE)
+  isGeneralFund        Boolean           @default(false)
+  designationLabel     String
+  stripeSubscriptionId String?           @unique
+  stripeScheduleId     String?           @unique
+  startedAt            DateTime          @default(now())
+  canceledAt           DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  donor                Donor             @relation(fields: [donorId], references: [id])
+  campaign             Campaign?         @relation(fields: [campaignId], references: [id])
+  donations            Donation[]
+}
+
+model Receipt {
+  id             String         @id @default(cuid())
+  donorId        String
+  donationId     String         @unique
+  deliveredTo    String
+  subject        String
+  deliveryStatus DeliveryStatus @default(PENDING)
+  sentAt         DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  donor          Donor          @relation(fields: [donorId], references: [id])
+  donation       Donation       @relation(fields: [donationId], references: [id])
+}
+
+model YearEndStatement {
+  id             String         @id @default(cuid())
+  donorId        String
+  taxYear        Int
+  totalAmountCents Int
+  artifactUrl    String?
+  deliveryStatus DeliveryStatus @default(PENDING)
+  sentAt         DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  donor          Donor          @relation(fields: [donorId], references: [id])
+
+  @@unique([donorId, taxYear])
+}
+
+model IntegrationEvent {
+  id           String                 @id @default(cuid())
+  provider     IntegrationProvider
+  entityType   String
+  entityId     String
+  eventType    String
+  payloadJson  String
+  status       IntegrationEventStatus @default(PENDING)
+  attempts     Int                    @default(0)
+  lastError    String?
+  syncedAt     DateTime?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@index([provider, status, createdAt])
+  @@index([entityType, entityId])
+}
